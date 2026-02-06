@@ -112,19 +112,6 @@ class ActionCenteredThompson:
         # Update theta_hat
         self.theta_hat = np.linalg.inv(self.B) @ self.b
 
-
-def build_features(context, N):
-    # context: vector s_bar_t from paper
-    features = []
-
-    for a in range(N):
-        # Example: simple shared features
-        features.append(context)
-
-    return features
-
-
-
 # 2 arms, generte context features for each arm for T time steps each
 # 5 elements in the context for each arm
 # T=100 number of time steps
