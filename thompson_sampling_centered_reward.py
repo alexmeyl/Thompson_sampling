@@ -20,9 +20,9 @@
 # print("\n") 
 
 
-
 import numpy as np
 from scipy.stats import norm
+import matplotlib.pyplot as plt 
 
 class ActionCenteredThompson:
     def __init__(self, d, N, pi_min=0.2, pi_max=0.8, v=1.0):
@@ -65,7 +65,7 @@ class ActionCenteredThompson:
         theta_prime = self.sample_theta()
 
         # ----- Step 5: Choose best non-zero action -----
-        scores = [s @ theta_prime for s in context_features] # for each action dot product of s_t_a and theta_prime
+        scores = [s @ theta_prime for s in context_features]
         a_bar = int(np.argmax(scores))   # index 0...(N-1)
 
         s_bar = context_features[a_bar]
@@ -112,6 +112,7 @@ class ActionCenteredThompson:
         # Update theta_hat
         self.theta_hat = np.linalg.inv(self.B) @ self.b
 
+
 # 2 arms, generte context features for each arm for T time steps each
 # 5 elements in the context for each arm
 # T=100 number of time steps
@@ -129,15 +130,17 @@ import numpy as np
 np.random.seed(1234)
 
 # ----- Parameters -----
-T = 100          # number of time steps
-n_arms = 2
-d = 5            # features per arm
+T = 1000          # number of time steps
+n_arms = 2           # number of arms
+base_d = 5          # features per arm
+d = n_arms * base_d           # combined features from both arms
 
 # ----- Generate big multivariate normal pool -----
 big_vector = np.random.normal(loc=0, scale=1, size=n_arms*d*T)
 
 # ----- Generate true theta -----
 theta_true = np.random.normal(0, 1, size=d)
+# theta_true = [-1,-1,-1,-1,-1, 1,1,1,1,1]  # arm 1 has negative effect, arm 2 has positive effect
 
 # ----- Containers -----
 # S_t_a will be the context vector for time t and arm a
@@ -150,36 +153,50 @@ r = np.zeros((T, n_arms))
 for t in range(T):
 
     # sample 10 elements from the big vector
-    idx = np.random.choice(len(big_vector), size=10, replace=False)
+    idx = np.random.choice(len(big_vector), size=n_arms*d, replace=False)
 
     sample = big_vector[idx]
 
-    # first 5 → arm 1 context
-    s1 = sample[:5]
+    # sample has length = base_d * n_arms
+    arm_features = []
 
-    # next 5 → arm 2 context
-    s2 = sample[5:]
+    for a in range(n_arms):
+        # take the slice for this arm
+        start = a * base_d
+        end = (a+1) * base_d
+        raw = sample[start:end]
 
-    S[t][0] = s1
-    S[t][1] = s2
+        # create 10-dim vector with zeros outside its block
+        s_a = np.zeros(base_d * n_arms)
+        s_a[start:end] = raw
+
+        arm_features.append(s_a)
+
+    # store
+    for a in range(n_arms):
+        S[t][a] = arm_features[a]
 
     # ----- treatment effects -----
-    noise1 = 0.1 * np.random.randn()
-    noise2 = 0.1 * np.random.randn()
+    for a in range(n_arms):
+        start = a * base_d
+        end = (a+1) * base_d
 
-    r[t,0] = s1 @ theta_true + noise1
-    r[t,1] = s2 @ theta_true + noise2
+        noise = 0.1 * np.random.randn()
+
+        r[t,a] = sample[start:end] @ theta_true[start:end] + noise
 
 
-# ----- Quick check -----
-print("Theta true:", theta_true)
-print("Example context arm1 t=0:", S[0][0])
-print("Example reward arm1 t=0:", r[0,0])
-
-from thompson_sampling_centered_reward import ActionCenteredThompson
+# # ----- Quick check -----
+# print("Theta true:", theta_true)
+# print("Example context arm1 t=0:", S[0][0])
+# print("Example reward arm1 t=0:", r[0,0])
 
 # ----- Create bandit instance -----
 bandit = ActionCenteredThompson(d=d, N=n_arms)
+
+# ----- Tracking -----
+regret = np.zeros(T)
+theta_error = np.zeros(T)
 
 # ----- Run algorithm -----
 for t in range(T):
@@ -191,6 +208,13 @@ for t in range(T):
 
     # get reward for chosen action
     reward = r[t, action-1] if action > 0 else 0
+
+    # ----- REGRET -----
+    best_reward = max(0, np.max(r[t]))
+    regret[t] = best_reward - reward
+
+    # ----- ERROR OVER TIME -----
+    theta_error[t] = np.linalg.norm(theta_true - bandit.theta_hat)
 
     # update 
     bandit.update(context_features[a_bar], action, pi_t, reward)
@@ -206,3 +230,28 @@ l2 = np.linalg.norm(theta_true - bandit.theta_hat)
 rel = l2 / np.linalg.norm(theta_true)
 print("L2 error:       {:.4f}".format(l2))
 print("Relative error: {:.2%}".format(rel))
+
+print("Cumulative regret: {:.4f}".format(np.sum(regret)))
+print("Final theta error: {:.4f}".format(theta_error[-1]))
+
+plt.figure(figsize=(10,4))
+
+plt.subplot(1,2,1)
+plt.plot(theta_error / np.linalg.norm(theta_true)*100)
+plt.title("Theta Estimation Error Over Time")
+plt.xlabel("Time step")
+plt.ylabel("Relative Error (%)")
+plt.grid(True)
+
+plt.subplot(1,2,2)
+sumregret = np.cumsum(regret)
+sumregret_overtime = sumregret / np.arange(1, T+1)
+plt.plot(sumregret_overtime)
+# print(" Begining of regret:: ", regret[:50])
+plt.title("Cumulative Regret Over Time")
+plt.xlabel("Time step")
+plt.ylabel("Cumulative regret")
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
