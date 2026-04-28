@@ -86,13 +86,23 @@ b ← b + s (indicator - π_t) r
 # Running the Code
 
 ## Baseline synthetic model
+
 ```bash
 python thompson_sampling_centered_reward.py
+```
 
-## Time-dependent synthectic model
+---
+
+## Time-dependent synthetic model
+
 ```bash
 python thompson_sampling_centered_reward_with_time_dep.py
+```
+
+---
 
 ## Real-world model
+
 ```bash
 python heartsteps_action_centered_ts.py
+```
